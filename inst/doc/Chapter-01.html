@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+
+
+<title>Chapter 01: Getting started — Setting up OpenCL</title>
+
+<script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
+// be compatible with the behavior of Pandoc < 2.8).
+document.addEventListener('DOMContentLoaded', function(e) {
+  var hs = document.querySelectorAll("div.section[class*='level'] > :first-child");
+  var i, h, a;
+  for (i = 0; i < hs.length; i++) {
+    h = hs[i];
+    if (!/^h[1-6]$/i.test(h.tagName)) continue;  // it should be a header h1-h6
+    a = h.attributes;
+    while (a.length > 0) h.removeAttribute(a[0].name);
+  }
+});
+</script>
+
+<style type="text/css">
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+span.underline{text-decoration: underline;}
+div.column{display: inline-block; vertical-align: top; width: 50%;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+</style>
+
+
+
+<style type="text/css">
+code {
+white-space: pre;
+}
+.sourceCode {
+overflow: visible;
+}
+</style>
+<style type="text/css" data-origin="pandoc">
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+{ counter-reset: source-line 0; }
+pre.numberSource code > span
+{ position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+{ content: counter(source-line);
+position: relative; left: -1em; text-align: right; vertical-align: baseline;
+border: none; display: inline-block;
+-webkit-touch-callout: none; -webkit-user-select: none;
+-khtml-user-select: none; -moz-user-select: none;
+-ms-user-select: none; user-select: none;
+padding: 0 4px; width: 4em;
+color: #aaaaaa;
+}
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa; padding-left: 4px; }
+div.sourceCode
+{ }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } 
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.at { color: #7d9029; } 
+code span.bn { color: #40a070; } 
+code span.bu { color: #008000; } 
+code span.cf { color: #007020; font-weight: bold; } 
+code span.ch { color: #4070a0; } 
+code span.cn { color: #880000; } 
+code span.co { color: #60a0b0; font-style: italic; } 
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.do { color: #ba2121; font-style: italic; } 
+code span.dt { color: #902000; } 
+code span.dv { color: #40a070; } 
+code span.er { color: #ff0000; font-weight: bold; } 
+code span.ex { } 
+code span.fl { color: #40a070; } 
+code span.fu { color: #06287e; } 
+code span.im { color: #008000; font-weight: bold; } 
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.kw { color: #007020; font-weight: bold; } 
+code span.op { color: #666666; } 
+code span.ot { color: #007020; } 
+code span.pp { color: #bc7a00; } 
+code span.sc { color: #4070a0; } 
+code span.ss { color: #bb6688; } 
+code span.st { color: #4070a0; } 
+code span.va { color: #19177c; } 
+code span.vs { color: #4070a0; } 
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } 
+</style>
+<script>
+// apply pandoc div.sourceCode style to pre.sourceCode instead
+(function() {
+  var sheets = document.styleSheets;
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].ownerNode.dataset["origin"] !== "pandoc") continue;
+    try { var rules = sheets[i].cssRules; } catch (e) { continue; }
+    var j = 0;
+    while (j < rules.length) {
+      var rule = rules[j];
+      // check if there is a div.sourceCode rule
+      if (rule.type !== rule.STYLE_RULE || rule.selectorText !== "div.sourceCode") {
+        j++;
+        continue;
+      }
+      var style = rule.style.cssText;
+      // check if color or background-color is set
+      if (rule.style.color === '' && rule.style.backgroundColor === '') {
+        j++;
+        continue;
+      }
+      // replace div.sourceCode by a pre.sourceCode rule
+      sheets[i].deleteRule(j);
+      sheets[i].insertRule('pre.sourceCode{' + style + '}', j);
+    }
+  }
+})();
+</script>
+
+
+
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; } 
+code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">Chapter 01: Getting started — Setting up
+OpenCL</h1>
+
+
+
+<div id="introduction" class="section level1">
+<h1>Introduction</h1>
+<p>This chapter describes how to install and verify an OpenCL
+development environment so that <code>opencltools</code> — and any
+downstream package that uses it, such as <code>nmathopencl</code> or
+<code>glmbayes</code> — can compile and run GPU‑accelerated code.</p>
+<p>OpenCL is vendor‑neutral and works across NVIDIA, AMD, and Intel
+hardware. All <code>opencltools</code> functions degrade gracefully when
+OpenCL is unavailable: device probing, kernel source loading, dependency
+sorting, and library subsetting all work without a GPU. Only the live
+kernel‑launch path requires OpenCL at runtime.</p>
+<hr />
+</div>
+<div id="download-and-install-build-tools" class="section level1">
+<h1>1. Download and install build tools</h1>
+<div id="windows-install-rtools" class="section level2">
+<h2>1.1 Windows: Install Rtools</h2>
+<p><a href="https://cran.r-project.org/bin/windows/Rtools/" class="uri">https://cran.r-project.org/bin/windows/Rtools/</a></p>
+</div>
+<div id="linux-install-compiler-toolchain-and-r-development-headers" class="section level2">
+<h2>1.2 Linux: Install compiler toolchain and R development headers</h2>
+<ul>
+<li><p><strong>Ubuntu/Debian:</strong></p>
+<pre><code>  sudo apt-get install build-essential r-base-dev</code></pre>
+<p><em>(If you need the latest R, add the CRAN repo first — see
+“Installing the latest R on Ubuntu/Debian” below.)</em></p></li>
+<li><p><strong>Fedora:</strong></p>
+<pre><code>  sudo dnf groupinstall &quot;Development Tools&quot;
+  sudo dnf install R-devel</code></pre></li>
+<li><p><strong>Arch Linux:</strong></p>
+<pre><code>  sudo pacman -S base-devel r</code></pre></li>
+</ul>
+<div id="installing-the-latest-r-on-ubuntudebian-optional-but-recommended" class="section level3">
+<h3>Installing the latest R on Ubuntu/Debian (optional but
+recommended)</h3>
+<p>Ubuntu’s default repositories often contain older R versions. To
+install the current CRAN release:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a><span class="fu">sudo</span> apt-get install <span class="at">--no-install-recommends</span> <span class="dt">\</span></span>
+<span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a>  dirmngr gnupg ca-certificates software-properties-common</span>
+<span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a><span class="fu">sudo</span> gpg <span class="at">--keyserver</span> keyserver.ubuntu.com <span class="dt">\</span></span>
+<span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a>  <span class="at">--recv-key</span> E298A3A825C0D65DFD57CBB651716619E084DAB9</span>
+<span id="cb4-5"><a href="#cb4-5" tabindex="-1"></a><span class="fu">sudo</span> gpg <span class="at">-a</span> <span class="at">--export</span> E298A3A825C0D65DFD57CBB651716619E084DAB9 <span class="dt">\</span></span>
+<span id="cb4-6"><a href="#cb4-6" tabindex="-1"></a>  <span class="kw">|</span> <span class="fu">sudo</span> tee /etc/apt/trusted.gpg.d/cran_ubuntu_key.asc</span>
+<span id="cb4-7"><a href="#cb4-7" tabindex="-1"></a><span class="fu">sudo</span> add-apt-repository <span class="dt">\</span></span>
+<span id="cb4-8"><a href="#cb4-8" tabindex="-1"></a>  <span class="st">&quot;deb https://CRAN.R-project.org/bin/linux/ubuntu/ jammy-cran40/&quot;</span></span>
+<span id="cb4-9"><a href="#cb4-9" tabindex="-1"></a><span class="fu">sudo</span> apt-get update</span>
+<span id="cb4-10"><a href="#cb4-10" tabindex="-1"></a><span class="fu">sudo</span> apt-get install build-essential r-base-dev</span></code></pre></div>
+</div>
+</div>
+<div id="macos-install-xcode-command-line-tools-and-gcc" class="section level2">
+<h2>1.3 macOS: Install Xcode Command Line Tools and GCC</h2>
+<p>macOS requires both the Xcode Command Line Tools and GCC when
+installing packages from source. The <code>configure</code> script uses
+GCC to detect system include and library paths for OpenCL.</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a><span class="ex">xcode-select</span> <span class="at">--install</span></span>
+<span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a><span class="ex">brew</span> install gcc</span></code></pre></div>
+<p>Binary installs do not require GCC.</p>
+<hr />
+</div>
+</div>
+<div id="install-opencl-components" class="section level1">
+<h1>2. Install OpenCL components</h1>
+<p>Packages that use GPU acceleration must be installed <strong>from
+source</strong> because neither CRAN nor R‑universe build packages with
+OpenCL GPU support — their build systems do not provide OpenCL headers
+or development libraries, so any precompiled binary has OpenCL disabled.
+To enable GPU acceleration you must build from source on a system with a
+complete OpenCL development environment.</p>
+<p>A full OpenCL development environment includes:</p>
+<ol style="list-style-type: decimal">
+<li><strong>OpenCL header files</strong> (needed at compile time)</li>
+<li><strong>The OpenCL runtime / ICD loader</strong> (needed at
+runtime)</li>
+<li><strong>The OpenCL development library</strong> providing the
+unversioned linker symlink <code>libOpenCL.so</code> (needed for
+linking)</li>
+</ol>
+<p>Most GPU drivers provide only the vendor‑specific runtime, not the
+headers or the development symlink. The following subsections describe
+how to obtain all three components on each platform.</p>
+<div id="windows" class="section level2">
+<h2>2.1 Windows</h2>
+<p>Choose one of:</p>
+<ul>
+<li><p><strong>CUDA Toolkit (recommended)</strong><br />
+Includes full OpenCL headers.<br />
+<a href="https://developer.nvidia.com/cuda-downloads" class="uri">https://developer.nvidia.com/cuda-downloads</a></p></li>
+<li><p><strong>Intel OpenCL runtimes / Intel oneAPI CPU
+runtime</strong><br />
+<a href="https://www.intel.com/content/www/us/en/developer/articles/tool/opencl-drivers.html" class="uri">https://www.intel.com/content/www/us/en/developer/articles/tool/opencl-drivers.html</a></p></li>
+<li><p><strong>Khronos OpenCL Headers (header‑only
+download)</strong><br />
+<a href="https://github.com/KhronosGroup/OpenCL-Headers" class="uri">https://github.com/KhronosGroup/OpenCL-Headers</a></p></li>
+</ul>
+<p><strong>Note:</strong> When installing the CUDA Toolkit, Intel OpenCL
+SDK, or Khronos headers you can accept all default installation options.
+The defaults include <code>CL/cl.h</code> and the other headers required
+to compile from source.</p>
+<p>On Windows, installing the CUDA Toolkit or Intel OpenCL SDK is
+sufficient; no additional runtime or development packages are
+required.</p>
+<p>AMD’s Windows driver package includes the OpenCL runtime and ICD
+components automatically. No additional installation or PATH
+configuration is required. If OpenCL is not detected, updating to the
+latest AMD Software (Adrenalin Edition) typically resolves the
+issue.</p>
+</div>
+<div id="linux" class="section level2">
+<h2>2.2 Linux</h2>
+<p>To compile and run with OpenCL support on Linux, you must
+install:</p>
+<ol style="list-style-type: decimal">
+<li>An OpenCL implementation (vendor runtime)</li>
+<li>OpenCL header files (compile‑time)</li>
+<li>The OpenCL ICD loader (runtime)</li>
+<li>The OpenCL development library providing <code>libOpenCL.so</code>
+(linking)</li>
+</ol>
+<p>The correct OpenCL implementation depends on your GPU vendor. For
+NVIDIA and Intel the runtime is installed automatically with the GPU
+driver. For AMD see Appendix A.</p>
+<div id="opencl-implementation-vendor-runtime" class="section level3">
+<h3>2.2.1 OpenCL implementation (vendor runtime)</h3>
+<ul>
+<li><strong>NVIDIA</strong>: installed automatically with the
+proprietary driver.</li>
+<li><strong>Intel</strong>: installed automatically with the Intel GPU
+driver.</li>
+<li><strong>AMD</strong>: requires installing ROCm OpenCL. See Appendix
+A.</li>
+</ul>
+</div>
+<div id="opencl-header-files" class="section level3">
+<h3>2.2.2 OpenCL header files</h3>
+<p>These provide <code>CL/cl.h</code>, <code>CL/cl_platform.h</code>,
+and related headers.</p>
+<ul>
+<li><p><strong>Ubuntu / Debian</strong></p>
+<pre><code>  sudo apt-get install opencl-headers</code></pre></li>
+<li><p><strong>Fedora</strong></p>
+<pre><code>  sudo dnf install opencl-headers</code></pre></li>
+<li><p><strong>Arch Linux</strong></p>
+<pre><code>  sudo pacman -S opencl-headers</code></pre></li>
+</ul>
+</div>
+<div id="opencl-runtime-icd-loader" class="section level3">
+<h3>2.2.3 OpenCL runtime (ICD loader)</h3>
+<p>Provides the shared library <code>libOpenCL.so.1</code> required for
+OpenCL to function at runtime.</p>
+<ul>
+<li><p><strong>Ubuntu / Debian</strong></p>
+<pre><code>  sudo apt-get install ocl-icd-libopencl1</code></pre></li>
+<li><p><strong>Fedora</strong></p>
+<pre><code>  sudo dnf install ocl-icd</code></pre></li>
+<li><p><strong>Arch Linux</strong></p>
+<pre><code>  sudo pacman -S opencl-icd-loader</code></pre></li>
+</ul>
+</div>
+<div id="opencl-development-library-linker-symlink" class="section level3">
+<h3>2.2.4 OpenCL development library (linker symlink)</h3>
+<p>To compile against OpenCL the linker requires the unversioned symlink
+<code>libOpenCL.so</code>. This is <strong>not</strong> provided by the
+runtime package.</p>
+<ul>
+<li><p><strong>Ubuntu / Debian</strong></p>
+<pre><code>  sudo apt-get install ocl-icd-opencl-dev</code></pre></li>
+<li><p><strong>Fedora</strong></p>
+<pre><code>  sudo dnf install ocl-icd-devel</code></pre></li>
+<li><p><strong>Arch Linux</strong></p>
+<pre><code>  *(already included with the ICD loader)*</code></pre></li>
+</ul>
+<p>Verify installation:</p>
+<div class="sourceCode" id="cb15"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb15-1"><a href="#cb15-1" tabindex="-1"></a><span class="fu">ls</span> <span class="at">-l</span> /usr/lib/x86_64-linux-gnu/libOpenCL<span class="pp">*</span></span></code></pre></div>
+<p>You should see <strong>both</strong> <code>libOpenCL.so</code> and
+<code>libOpenCL.so.1</code>. If only <code>libOpenCL.so.1</code> is
+present, install the development package.</p>
+</div>
+<div id="verify-opencl-platforms-with-clinfo-linux-recommended" class="section level3">
+<h3>2.2.5 Verify OpenCL platforms with <code>clinfo</code> (Linux,
+recommended)</h3>
+<p>Having headers and <code>libOpenCL</code> installed does
+<strong>not</strong> guarantee that a vendor OpenCL implementation
+registers a platform. On Linux — especially remote GPU VMs — it helps to
+check outside R first.</p>
+<div class="sourceCode" id="cb16"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb16-1"><a href="#cb16-1" tabindex="-1"></a><span class="fu">sudo</span> apt-get install clinfo   <span class="co"># Ubuntu/Debian</span></span>
+<span id="cb16-2"><a href="#cb16-2" tabindex="-1"></a><span class="ex">clinfo</span></span></code></pre></div>
+<p>You should see <strong><code>Number of platforms</code> &gt;=
+1</strong> and at least one GPU device. If
+<code>Number of platforms</code> is 0, the ICD loader is present but no
+vendor runtime is visible — install your vendor’s OpenCL ICD
+(<code>sudo apt-get install nvidia-opencl-icd</code> on Ubuntu/Debian
+NVIDIA systems) and run <code>clinfo</code> again.</p>
+<p><code>clinfo</code> complements the R‑level diagnostics when
+debugging cloud or container setups where <code>nvidia-smi</code> works
+but OpenCL still reports no platform.</p>
+</div>
+</div>
+<div id="macos" class="section level2">
+<h2>2.3 macOS</h2>
+<p>macOS includes the OpenCL headers and system runtime as part of the
+Xcode Command Line Tools, so no additional installation is required for
+compilation. However, Apple has deprecated OpenCL, and modern Apple
+Silicon systems do not provide hardware OpenCL support. Packages will
+compile successfully on macOS but GPU acceleration is not guaranteed and
+may fall back to CPU execution.</p>
+<hr />
+</div>
+</div>
+<div id="install-opencltools-from-source-for-opencl" class="section level1">
+<h1>3. Install opencltools from source (for OpenCL)</h1>
+<p>The CRAN release and pre-built R-Universe binaries are built without
+OpenCL GPU support. Install from source on a machine with OpenCL headers
+and a working vendor runtime to enable GPU acceleration.</p>
+<div class="sourceCode" id="cb17"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb17-1"><a href="#cb17-1" tabindex="-1"></a><span class="fu">install.packages</span>(</span>
+<span id="cb17-2"><a href="#cb17-2" tabindex="-1"></a>  <span class="st">&quot;opencltools&quot;</span>,</span>
+<span id="cb17-3"><a href="#cb17-3" tabindex="-1"></a>  <span class="at">repos =</span> <span class="fu">c</span>(<span class="st">&quot;https://cloud.r-project.org&quot;</span>, <span class="st">&quot;https://knygren.r-universe.dev&quot;</span>),</span>
+<span id="cb17-4"><a href="#cb17-4" tabindex="-1"></a>  <span class="at">type =</span> <span class="st">&quot;source&quot;</span></span>
+<span id="cb17-5"><a href="#cb17-5" tabindex="-1"></a>)</span></code></pre></div>
+<hr />
+</div>
+<div id="load-the-package" class="section level1">
+<h1>4. Load the package</h1>
+<div class="sourceCode" id="cb18"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb18-1"><a href="#cb18-1" tabindex="-1"></a><span class="fu">library</span>(opencltools)</span></code></pre></div>
+<hr />
+</div>
+<div id="check-for-opencl-availability" class="section level1">
+<h1>5. Check for OpenCL availability</h1>
+<p>On <strong>Linux</strong>, if you have shell access (including
+Jupyter Terminal on a cloud instance), running <code>clinfo</code>
+before opening R is recommended — it catches missing vendor ICDs early,
+independent of the R session.</p>
+<div class="sourceCode" id="cb19"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb19-1"><a href="#cb19-1" tabindex="-1"></a><span class="fu">has_opencl</span>()</span></code></pre></div>
+<ul>
+<li>Returns <code>TRUE</code> if OpenCL is available and detected.</li>
+<li>Returns <code>FALSE</code> if OpenCL is not available.</li>
+</ul>
+<div id="full-diagnostic" class="section level2">
+<h2>5.1 Full diagnostic</h2>
+<p>If <code>has_opencl()</code> returns <code>FALSE</code>, or to get a
+complete picture of your OpenCL environment, run the diagnostic
+suite:</p>
+<div class="sourceCode" id="cb20"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb20-1"><a href="#cb20-1" tabindex="-1"></a><span class="co"># High-level environment and GPU detection</span></span>
+<span id="cb20-2"><a href="#cb20-2" tabindex="-1"></a><span class="fu">detect_environment_and_gpus</span>()</span>
+<span id="cb20-3"><a href="#cb20-3" tabindex="-1"></a></span>
+<span id="cb20-4"><a href="#cb20-4" tabindex="-1"></a><span class="co"># Runtime availability check (platform probe)</span></span>
+<span id="cb20-5"><a href="#cb20-5" tabindex="-1"></a><span class="fu">verify_opencl_runtime</span>()</span>
+<span id="cb20-6"><a href="#cb20-6" tabindex="-1"></a></span>
+<span id="cb20-7"><a href="#cb20-7" tabindex="-1"></a><span class="co"># PATH and library directory validation</span></span>
+<span id="cb20-8"><a href="#cb20-8" tabindex="-1"></a><span class="fu">check_runtime_env</span>()</span></code></pre></div>
+<p><code>detect_environment_and_gpus()</code> reports the OS, GPU
+vendor(s) detected, and which runtimes are present.
+<code>verify_opencl_runtime()</code> performs a live
+<code>clGetPlatformIDs()</code> call and reports the first usable
+device. <code>check_runtime_env()</code> validates PATH and library
+search paths.</p>
+<p>A clean <code>verify_opencl_runtime()</code> output looks like:</p>
+<pre><code>=== OpenCL Runtime Check ===
+Environment: linux
+GPU: NVIDIA
+  [OK] Driver installed
+  [OK] OpenCL headers found (CL/cl.h)
+  [OK] OpenCL runtime found (libOpenCL ICD)
+  [OK] OpenCL fully available (headers + runtime)
+  [OK] Required PATH and library dirs present
+  [OK] OpenCL runtime probe succeeded (platform available)
+  [OK] opencltools was compiled with OpenCL support.</code></pre>
+<p>If any line shows a warning or error the output indicates which
+component is missing and how to correct it.</p>
+<hr />
+</div>
+</div>
+<div id="verify-the-kernel-loading-path" class="section level1">
+<h1>6. Verify the kernel-loading path</h1>
+<p>Even without a GPU you can verify that <code>opencltools</code>’
+kernel loading and dependency management work correctly. These operate
+entirely in R without touching the OpenCL runtime:</p>
+<div class="sourceCode" id="cb22"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb22-1"><a href="#cb22-1" tabindex="-1"></a><span class="fu">library</span>(opencltools)</span>
+<span id="cb22-2"><a href="#cb22-2" tabindex="-1"></a></span>
+<span id="cb22-3"><a href="#cb22-3" tabindex="-1"></a><span class="co"># Load a single kernel source file</span></span>
+<span id="cb22-4"><a href="#cb22-4" tabindex="-1"></a>src <span class="ot">&lt;-</span> <span class="fu">load_kernel_source</span>(<span class="st">&quot;OPENCL.cl&quot;</span>)</span>
+<span id="cb22-5"><a href="#cb22-5" tabindex="-1"></a><span class="fu">nchar</span>(src)</span>
+<span id="cb22-6"><a href="#cb22-6" tabindex="-1"></a></span>
+<span id="cb22-7"><a href="#cb22-7" tabindex="-1"></a><span class="co"># List available devices (requires runtime)</span></span>
+<span id="cb22-8"><a href="#cb22-8" tabindex="-1"></a><span class="cf">if</span> (<span class="fu">has_opencl</span>()) {</span>
+<span id="cb22-9"><a href="#cb22-9" tabindex="-1"></a>  <span class="fu">opencl_device_info</span>()</span>
+<span id="cb22-10"><a href="#cb22-10" tabindex="-1"></a>  <span class="fu">gpu_names</span>()</span>
+<span id="cb22-11"><a href="#cb22-11" tabindex="-1"></a>}</span></code></pre></div>
+<hr />
+</div>
+<div id="appendix-a-amd-gpus-on-linux-rocm-opencl-recommended" class="section level1">
+<h1>Appendix A: AMD GPUs on Linux (ROCm OpenCL recommended)</h1>
+<p>AMD provides multiple OpenCL implementations on Linux, but only
+<strong>ROCm OpenCL</strong> is fully supported and stable. If you are
+using an AMD GPU we recommend installing ROCm OpenCL on <strong>Ubuntu
+22.04 or 24.04 LTS</strong>.</p>
+<div id="install-rocm-opencl-ubuntu-lts" class="section level2">
+<h2>Install ROCm OpenCL (Ubuntu LTS)</h2>
+<div class="sourceCode" id="cb23"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb23-1"><a href="#cb23-1" tabindex="-1"></a><span class="fu">sudo</span> apt-get install rocm-opencl-runtime</span></code></pre></div>
+<p>This installs the AMD OpenCL runtime, the ICD file
+(<code>amdocl64.icd</code>), and ROCm’s optimized OpenCL
+implementation.</p>
+</div>
+<div id="supported-amd-gpus" class="section level2">
+<h2>Supported AMD GPUs</h2>
+<p>ROCm OpenCL supports:</p>
+<ul>
+<li>Radeon RX 7900 XTX / XT / GRE</li>
+<li>Radeon RX 7800 XT / 7700 XT</li>
+<li>Radeon Pro W7900 / W7800 / W7700</li>
+<li>Instinct MI200 / MI300 accelerators</li>
+</ul>
+<p>Older GPUs (Polaris, Vega, Navi 1x/2x) are <strong>not
+supported</strong> by ROCm.</p>
+</div>
+<div id="other-amd-opencl-stacks" class="section level2">
+<h2>Other AMD OpenCL stacks</h2>
+<ul>
+<li><strong>Mesa Rusticl</strong>: community OpenCL implementation; may
+work but is not officially supported.</li>
+<li><strong>AMDGPU‑PRO OpenCL</strong>: legacy and not recommended.</li>
+</ul>
+<hr />
+</div>
+</div>
+<div id="references" class="section level1">
+<h1>References</h1>
+<p>Stone, J. E., Gohara, D., &amp; Shi, G. (2010). OpenCL: A Parallel
+Programming Standard for Heterogeneous Computing Systems. <em>IEEE
+Computing in Science &amp; Engineering</em>, 12(3), 66–72. <a href="https://doi.org/10.1109/MCSE.2010.69" class="uri">https://doi.org/10.1109/MCSE.2010.69</a></p>
+<p>Khronos OpenCL Working Group. <em>The OpenCL Specification</em> and
+<em>The OpenCL C Specification</em>. <a href="https://www.khronos.org/opencl/" class="uri">https://www.khronos.org/opencl/</a></p>
+<p>OpenCL and the OpenCL logo are trademarks of Apple Inc. used by
+permission by Khronos.</p>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

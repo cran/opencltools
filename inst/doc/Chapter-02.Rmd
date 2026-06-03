@@ -1,0 +1,387 @@
+---
+title: "Chapter 02: Using a ported library — assembling kernel programs"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Chapter 02: Using a ported library — assembling kernel programs}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup, eval = FALSE}
+library(opencltools)
+```
+
+# Introduction
+
+OpenCL kernels are not self‑contained: any kernel that calls statistical
+math functions (e.g. `dgamma`, `pnorm5`, `dbinom_raw`) depends on
+OpenCL‑C ports of those functions to be compiled and loaded alongside it.
+`opencltools` provides the tools to manage those dependencies — loading,
+sorting, and assembling library shards into a single program string —
+without the calling package needing to know the internal structure of the
+library it is using.
+
+This chapter uses `nmathopencl` as the concrete worked example.  `nmathopencl`
+ships an OpenCL‑C port of R's Mathlib (nmath) as a directory of annotated
+`.cl` shards.  The same `opencltools` functions work with any library that
+follows the same annotation convention.
+
+For OpenCL setup and device verification, see Chapter 01.
+
+---
+
+# 1. Anatomy of a ported library
+
+[`nmathopencl`](https://knygren.r-universe.dev/nmathopencl) organizes its OpenCL-C source into a top-level configuration
+file and seven subdirectories under `inst/cl/`.  The layout mirrors how R
+itself layers its headers and runtime — each directory provides exactly what
+the directories after it need:
+
+| Load order | Directory / file | Contents |
+|:----------:|------------------|----------|
+| 1 | `OPENCL.cl` | Global OpenCL configuration: `cl_khr_fp64` / `cl_khr_printf` extensions, IEEE constants (`ML_NAN`, `ML_POSINF`), feature‑detection macros for `expm1`/`log1p` |
+| 2 | `libR_shims/` | Host‑runtime compatibility shims: `R_pow`, `R_pow_di`, `R_CheckStack` — the bottom‑most primitive operations that everything above depends on |
+| 3 | `R_ext_types/` | Type definitions: `Rboolean`, `FALSE`/`TRUE`, and related type aliases (mirrors R's `Boolean.h` etc.) |
+| 4 | `R_shims/` | R configuration and define shims: `Rconfig.cl`, `Rdefines.cl`, `Rinternals.cl` |
+| 5 | `R_ext_runtime/` | Memory, error, and I/O interface shims: `error`, `warning`, `Rf_error`, `Rf_warning` — mirrors R's `Error.h`, `Memory.h`, etc. |
+| 6 | `R_ext_internals/` | Internal R extension definitions (less commonly needed by nmath directly) |
+| 7 | `System/` | System‑level integer type definitions: `int64_t`, `uint64_t`, etc. (replaces `<stdint.h>`) |
+| 8 | `nmath/` | The ported Mathlib sources (~137 `.cl` shards including `Rmath.cl`, `nmath.cl`, `dpq.cl`, `refactored.cl`, and all distribution function files) |
+
+The ordering is not arbitrary — it matches the header include chain that
+R's `nmath.h` follows.  Each layer provides symbols the next layer assumes
+are already defined.  `load_kernel_library` performs a topological sort
+*within* each subdirectory; the subdirectories themselves must be loaded
+in the order above.
+
+Each `.cl` shard carries annotation comments that `opencltools` reads to
+determine within-directory dependency order.
+
+## 1.1 Shard annotations
+
+Every library shard declares what it provides and what it depends on:
+
+```c
+// @source_type:  c
+// @source_origin: dgamma.c
+// @provides:    dgamma
+// @depends:     dpois, nmath, dpq
+// @all_depends: dpq, Rmath, nmath, stirlerr, ...   (auto-generated)
+// @load_order:  99                                  (auto-generated)
+```
+
+- **`@provides`** — symbols this file exports (used to build the
+  symbol→shard map).
+- **`@depends`** — other shards (by stem) this file needs.
+- **`@all_depends`** and **`@load_order`** — computed by
+  `attach_kernel_dependency_tags()` / `write_kernel_dependency_index()`;
+  do not edit manually.
+
+---
+
+# 2. The nmath module
+
+The `nmath/` subdirectory of [`nmathopencl`](https://knygren.r-universe.dev/nmathopencl) contains ~137 ported `.cl` shards.
+It includes the anchor files `Rmath.cl` (all distribution function declarations
+and mathematical constants), `nmath.cl` (the core Mathlib header macros),
+`dpq.cl` (R‑style density/CDF macros for `give_log`/`lower_tail` logic), and
+`refactored.cl` (forward declarations needed to break circular dependencies in
+the OpenCL single-pass compilation model), plus the individual distribution
+function files.
+
+The table below lists the key infrastructure shards and the shards most
+relevant for GLM / envelope computations:
+
+| Shard | `@provides` | Purpose |
+|-------|-------------|---------|
+| `Rmath.cl` | All Rmath constants and all distribution function signatures | Master declaration header — equivalent to R's `Rmath.h` |
+| `nmath.cl` | `ML_*`, `ME_*`, `ISNAN`, `R_FINITE`, `ML_ERROR`, and many private helpers | Core Mathlib header macros and private declarations |
+| `dpq.cl` | `R_D__0`, `R_DT_val`, `R_D_exp`, … | R‑style density/CDF macros for `give_log` / `lower_tail` logic |
+| `refactored.cl` | Forward declarations for cycle‑broken functions | Needed because OpenCL C is single‑pass; breaks mutual call cycles in the nmath graph |
+| `log1p.cl` | `log1p`, `Rlog1p` | log(1+x) for numerical stability |
+| `expm1.cl` | `expm1` | exp(x)−1 for numerical stability |
+| `bd0.cl` | `bd0`, `ebd0` | Poisson/binomial deviance terms |
+| `stirlerr.cl` | `stirlerr` | Stirling error; dispatches to the two cycle‑broken fragments below |
+| `stirlerr_cycle_free.cl` | `stirlerr_cycle_free` | Table‑lookup path for small arguments (split from `stirlerr.c` to break cycle) |
+| `stirlerr_cycle_dependent.cl` | `stirlerr_cycle_dependent` | Series path for large arguments |
+| `pgamma_utils.cl` | `log1pmx`, `lgamma1p` | Utilities extracted from `pgamma.c` to break cycle |
+| `lgamma.cl` | `lgammafn`, `lgammafn_sign` | Log‑gamma |
+| `gamma.cl` | `gammafn` | Gamma function |
+| `lgammacor.cl` | `lgammacor` | Series correction for large log-gamma arguments |
+| `chebyshev.cl` | `chebyshev_init`, `chebyshev_eval` | Called by `lgammacor` |
+| `cospi.cl` | `cospi`, `sinpi`, `tanpi` | `sinpi` used in the negative-argument reflection formula for `gammafn` |
+| `fmax2.cl` / `fmin2.cl` | `fmax2`, `fmin2` | Called by `gammalims` and others |
+| `gammalims.cl` | `gammalims` | Gamma function overflow/underflow bounds |
+| `dbinom.cl` | `dbinom`, `dbinom_raw`, `pow1p` | Binomial density |
+| `dpois.cl` | `dpois`, `dpois_raw` | Poisson density |
+| `dgamma.cl` | `dgamma` | Gamma density |
+| `dnorm.cl` | `dnorm`, `dnorm4` | Normal density |
+| `pnorm.cl` | `pnorm`, `pnorm_both`, `pnorm5` | Normal CDF (probit) |
+| `pgamma.cl` | `pgamma` | Gamma CDF |
+
+`pnorm.cl` and `dnorm.cl` are self‑contained: their only dependencies are
+the `nmath.cl` infrastructure shim and the `dpq`‑style macros — no additional
+math files are pulled in.  `dbinom.cl` and `dgamma.cl` share almost the entire
+gamma function stack (`lgamma`, `gamma`, `lgammacor`, `chebyshev`, `cospi`,
+`gammalims`, `fmax2`, `pgamma_utils`, `stirlerr`, `bd0`).
+
+These ports ensure that OpenCL kernels produce results **numerically
+consistent** with R's CPU path.
+
+---
+
+# 3. Loading kernel source files
+
+## 3.1 Single file
+
+`load_kernel_source()` loads one `.cl` file from a package's `inst/cl/`
+directory and returns its contents as a character string:
+
+```{r, eval = FALSE}
+# Load the global configuration preamble
+opencl_cl <- load_kernel_source("OPENCL.cl", package = "nmathopencl")
+
+# Load a specific kernel
+f2_src <- load_kernel_source("src/f2_f3_gaussian.cl", package = "nmathopencl")
+```
+
+The returned string is ready to concatenate or pass directly to
+`clCreateProgramWithSource`.
+
+## 3.2 A whole library directory
+
+`load_kernel_library()` loads **all** `.cl` files in a subdirectory,
+performs a **dependency-aware topological sort** (using `@depends`
+annotations), and returns their contents concatenated in the correct load
+order — so that every shard appears after all the shards it depends on:
+
+```{r, eval = FALSE}
+# Load one of nmathopencl's dependency layers
+nmath_src <- load_kernel_library("nmath", package = "nmathopencl")
+```
+
+Each of `nmathopencl`'s seven subdirectories is a separate call.  Together
+they are the building blocks of a complete OpenCL program string (see §4).
+
+---
+
+# 4. Program assembly
+
+An OpenCL program that calls nmath functions must include all dependency
+layers in a fixed order.  The order is not arbitrary — it mirrors the header
+include chain that R's `nmath.h` follows: each layer defines symbols the next
+layer assumes are already visible.
+
+The canonical assembly sequence used by `glmbayes` is:
+
+```
+program_source =
+    OPENCL.cl                                    # 1. global config, extensions, macros
+  + libR_shims   (load_kernel_library("libR_shims"))    # 2. R_pow, R_pow_di, R_CheckStack
+  + R_ext_types  (load_kernel_library("R_ext_types"))   # 3. Rboolean, TRUE/FALSE, type aliases
+  + R_shims      (load_kernel_library("R_shims"))       # 4. Rconfig, Rdefines, Rinternals shims
+  + R_ext_runtime(load_kernel_library("R_ext_runtime")) # 5. error, warning, memory shims
+  + R_ext_internals(load_kernel_library("R_ext_internals")) # 6. internal R extension defs
+  + System       (load_kernel_library("System"))        # 7. int64_t, uint64_t (stdint shim)
+  + nmath        (load_kernel_library("nmath"))         # 8. all ported Mathlib (~137 shards)
+  + kernel file  (load_kernel_source("src/..."))        # 9. your model-specific kernel
+```
+
+Steps 2–8 together constitute the **nmathopencl layer**: they make every
+nmath function — `lgamma`, `lbeta`, `dbinom`, `dpois`, `pnorm`, and so on —
+available as device‑side functions inside the kernel at step 9.
+
+In C++ inside a kernel runner (the pattern used by `glmbayes`):
+
+```cpp
+std::string all_src =
+    load_kernel_source("OPENCL.cl")
+  + "\n" + load_kernel_library("libR_shims",      "nmathopencl")
+  + "\n" + load_kernel_library("R_ext_types",     "nmathopencl")
+  + "\n" + load_kernel_library("R_shims",         "nmathopencl")
+  + "\n" + load_kernel_library("R_ext_runtime",   "nmathopencl")
+  + "\n" + load_kernel_library("R_ext_internals", "nmathopencl")
+  + "\n" + load_kernel_library("System",          "nmathopencl")
+  + "\n" + load_kernel_library("nmath",           "nmathopencl")
+  + "\n" + load_kernel_source("src/f2_f3_gaussian.cl");
+```
+
+Or equivalently in R:
+
+```{r, eval = FALSE}
+library(opencltools)
+pkg <- "nmathopencl"
+
+all_src <- paste(
+  load_kernel_source("OPENCL.cl"),
+  load_kernel_library("libR_shims",      package = pkg),
+  load_kernel_library("R_ext_types",     package = pkg),
+  load_kernel_library("R_shims",         package = pkg),
+  load_kernel_library("R_ext_runtime",   package = pkg),
+  load_kernel_library("R_ext_internals", package = pkg),
+  load_kernel_library("System",          package = pkg),
+  load_kernel_library("nmath",           package = pkg),
+  load_kernel_source("src/f2_f3_gaussian.cl", package = pkg),
+  sep = "\n"
+)
+```
+
+The resulting `all_src` string is passed to `clCreateProgramWithSource`.
+`load_kernel_library` performs a topological sort within each subdirectory
+so you do not need to enumerate individual files — you only nominate a
+subdirectory name.
+
+---
+
+# 5. Minimal subsetting — loading only the nmath shards a kernel needs
+
+The full assembly in §4 loads all ~137 nmath shards.  For performance it is
+better to include only the shards a specific kernel actually requires — this
+reduces the program source size and cuts first-call just-in-time (JIT) compilation time.
+
+`load_library_for_kernel()` reads the `@all_depends_nmath` annotation from
+a kernel file (written by `attach_cross_library_tags()`, see §6) and returns
+the source of exactly those nmath shards, in dependency order:
+
+```{r, eval = FALSE}
+nmath_dir   <- system.file("cl/nmath", package = "nmathopencl")
+kernel_path <- system.file("cl/src/f2_f3_gaussian.cl", package = "nmathopencl")
+
+# Returns only the nmath shards the gaussian kernel needs (dnorm + its deps)
+nmath_subset <- load_library_for_kernel(
+  kernel_path,
+  library_dir = nmath_dir,
+  depends_tag = "all_depends_nmath"
+)
+# Warnings fire automatically for any stems with known portability issues
+```
+
+Substitute this result for the full `load_kernel_library("nmath", ...)` call
+in §4 while keeping all other layers unchanged — the prelude layers
+(`libR_shims`, `R_ext_types`, etc.) are always loaded in full.
+
+This function is implemented in C++ and exposed to R as a convenience
+wrapper, so it can be called from `*.cpp` inside a kernel runner without
+going back into R.
+
+---
+
+# 6. Annotating your kernel files
+
+When you write a new kernel that calls nmath (or any other ported library),
+two `opencltools` functions handle all the dependency annotation — no manual
+tagging is needed beyond one line declaring which library you use.
+
+## 6.1 Declare the library (one line, written by you)
+
+Add a single comment at the top of your kernel file:
+
+```c
+// @library_deps: nmath
+__kernel void my_kernel(...) {
+  double v = dgamma(x[j], shape, scale, 0);
+  ...
+}
+```
+
+## 6.2 Step 1 — scan source, write direct-call tags
+
+`attach_kernel_call_tags()` builds the library's symbol→shard map from
+`@provides` annotations, scans your kernel source for matching calls,
+and writes `@calls_nmath` and `@depends_nmath` automatically:
+
+```{r, eval = FALSE}
+nmath_dir <- system.file("cl/nmath", package = "nmathopencl")
+
+attach_kernel_call_tags(
+  kernel_paths = list.files("inst/cl/src", "\\.cl$", full.names = TRUE),
+  library_dir  = nmath_dir,
+  library_tag  = "nmath"
+)
+```
+
+After this step your kernel file contains:
+
+```c
+// @library_deps: nmath
+// @calls_nmath: dgamma
+// @depends_nmath: dgamma
+// @calls_opencl_builtin: (none)
+```
+
+## 6.3 Step 2 — compute transitive closure
+
+`attach_cross_library_tags()` reads `@depends_nmath`, walks the
+pre-built dependency index, and writes `@all_depends_nmath` — the
+complete ordered list of every shard needed:
+
+```{r, eval = FALSE}
+attach_cross_library_tags(
+  kernel_paths = list.files("inst/cl/src", "\\.cl$", full.names = TRUE),
+  library_dir  = nmath_dir,
+  depends_tag  = "depends_nmath"
+)
+```
+
+After this step the kernel file contains the full annotation block:
+
+```c
+// @library_deps: nmath
+// @calls_nmath: dgamma
+// @depends_nmath: dgamma
+// @calls_opencl_builtin: (none)
+// @all_depends_nmath_count: 19
+// @all_depends_nmath: dpq, Rmath, nmath, stirlerr_cycle_free, chebyshev, ...
+```
+
+Re-run both steps after editing your kernel and adding or removing
+library calls.
+
+---
+
+# 7. Verifying portability
+
+Before wiring a kernel into production code you can verify that every
+function it needs has been ported and is unlikely to cause problems.
+`opencltools` maintains a curated `opencl_known_failures.json` and surfaces
+warnings automatically when you call `load_library_for_kernel()`.  The
+warnings identify stems with known portability issues so you can decide
+whether to proceed or find an alternative.
+
+---
+
+# 8. Maintaining a library index
+
+If you build or update a library of annotated `.cl` shards (e.g. after
+adding new ported functions), regenerate the dependency index:
+
+```{r, eval = FALSE}
+write_kernel_dependency_index(
+  library_dir = "inst/cl/nmath",
+  output_dir  = "inst/cl/nmath"
+)
+```
+
+The resulting `kernel_dependency_index.rds` is read by
+`load_library_for_kernel()` and `attach_cross_library_tags()`.  It is
+pre-built for `nmathopencl` and does not need to be regenerated unless you
+fork or extend the library.
+
+---
+
+# Cross-references
+
+- **Chapter 01** — OpenCL installation and device verification
+- **Chapter 03** — Kernel design pattern: the runner/wrapper approach
+- **`?load_kernel_source`**, **`?load_kernel_library`** — loading functions
+- **`?load_library_for_kernel`** — minimal subsetting
+- **`?attach_kernel_call_tags`** — source-scanning annotation (Step 1)
+- **`?attach_cross_library_tags`** — transitive closure annotation (Step 2)
+- **`?write_kernel_dependency_index`** — index maintenance

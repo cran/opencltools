@@ -1,0 +1,270 @@
+#!/bin/sh
+# ── configure ──
+# This script runs on Linux/macOS (never on Windows).
+# It detects RcppParallel, OpenCL headers/libs, performs a runtime probe,
+# detects CUDA (optional), and generates src/Makevars dynamically.
+
+# Use R_HOME/bin/Rscript (Writing R Extensions). Never invoke bare "R" or "Rscript"
+# (some rhub images print a warning to stdout/stderr that has been mistaken for R_HOME).
+# R CMD INSTALL normally sets R_HOME; if it is missing or bogus, derive from PATH.
+R_HOME_EFFECTIVE=""
+if [ -n "$R_HOME" ] && [ -x "$R_HOME/bin/Rscript" ]; then
+  R_HOME_EFFECTIVE="$R_HOME"
+else
+  R_BIN=$(command -v R 2>/dev/null || true)
+  if [ -n "$R_BIN" ] && [ -x "$R_BIN" ]; then
+    R_HOME_EFFECTIVE=$(cd "$(dirname "$R_BIN")/.." && pwd)
+  fi
+  if [ -z "$R_HOME_EFFECTIVE" ] || [ ! -x "$R_HOME_EFFECTIVE/bin/Rscript" ]; then
+    RS_BIN=$(command -v Rscript 2>/dev/null || true)
+    if [ -n "$RS_BIN" ] && [ -x "$RS_BIN" ]; then
+      R_HOME_EFFECTIVE=$(cd "$(dirname "$RS_BIN")/.." && pwd)
+    fi
+  fi
+fi
+
+if [ -z "$R_HOME_EFFECTIVE" ] || [ ! -x "$R_HOME_EFFECTIVE/bin/Rscript" ]; then
+  echo "configure: could not resolve R_HOME with executable bin/Rscript (R_HOME=$R_HOME)" >&2
+  exit 1
+fi
+R_HOME="$R_HOME_EFFECTIVE"
+RSCRIPT="$R_HOME/bin/Rscript"
+echo ">> configure: R_HOME = '$R_HOME'"
+
+# ---- 1. Detect RcppParallel include and library paths ----
+RPP_INC_DIR=$("$RSCRIPT" -e "cat(system.file('include', package = 'RcppParallel'))")
+RPP_LIB_DIR=$("$RSCRIPT" -e "cat(system.file('lib', package = 'RcppParallel'))")
+
+echo ">> Detected RcppParallel include dir: $RPP_INC_DIR"
+echo ">> Detected RcppParallel lib dir: $RPP_LIB_DIR"
+echo ">> RPP_INC_DIR      = '$RPP_INC_DIR'"
+echo ">> RPP_LIB_DIR      = '$RPP_LIB_DIR'"
+
+# ---- 2. Detect Emscripten or Darwin (macOS) and disable OpenMP if needed ----
+if [ "$(basename "$CXX")" = "em++" ] || [ "$(basename "$CXX")" = "emcc" ]; then
+  EMSCRIPTEN_BUILD=YES
+elif command -v emcc >/dev/null 2>&1; then
+  EMSCRIPTEN_BUILD=YES
+else
+  EMSCRIPTEN_BUILD=NO
+fi
+
+echo "🔧 EMSCRIPTEN_BUILD=$EMSCRIPTEN_BUILD"
+
+OS=$(uname -s)
+echo ">> OS      = '$OS'"
+
+# Disable OpenMP for Emscripten/macOS; otherwise leave empty (OpenMP removed)
+if [ "$(basename "$CXX")" = "em++" ] || [ "$OS" = "Darwin" ]; then
+  echo "🚀 Emscripten detected: disabling OpenMP flags"
+  OPENMP_CFLAGS=""
+  OPENMP_LDFLAGS=""
+  EMSCRIPTEN_BUILD=YES
+else
+  EMSCRIPTEN_BUILD=NO
+  OPENMP_CFLAGS=""
+  OPENMP_LDFLAGS=""
+fi
+
+# ---- 3. Core flags ----
+OPENCL_FOUND=no
+# Link against the same BLAS/LAPACK as this R (Writing R Extensions). Using
+# -llapack/-lblas breaks on minimal Linux images (e.g. rhub) where those
+# -l names are not on the default linker path.
+R_LAPACK_BLAS_FLIBS='$(LAPACK_LIBS) $(BLAS_LIBS) $(FLIBS)'
+
+# ---- 4. RcppParallel flags ----
+RPP_CPPFLAGS="-I$RPP_INC_DIR"
+RPP_LDFLAGS="-L$RPP_LIB_DIR -ltbb -ltbbmalloc -Wl,-rpath,${RPP_LIB_DIR}"
+
+echo ">> RPP_CPPFLAGS = '$RPP_CPPFLAGS'"
+echo ">> RPP_LDFLAGS = '$RPP_LDFLAGS'"
+
+# Legacy variable (unused but must remain because it was active)
+RCPPPARALLEL_FLAGS="-L$RCPPPARALLEL_LIB -ltbb -I$RCPPPARALLEL_INC"
+
+#!/bin/bash
+
+# ---- 5. Collect system include directories ----
+echo "📚 Collecting system include directories from gcc..."
+SYSTEM_INCLUDE_DIRS=$(echo | gcc -E -x c++ - -v 2>&1 | grep "^ /" | sed 's/^ //')
+echo "$SYSTEM_INCLUDE_DIRS"
+
+OPENCL_HEADER="CL/cl.h"
+OPENCL_INCLUDE_FOUND=no
+OPENCL_LIB_HEADER="libOpenCL.so"
+OPENCL_LIB_FOUND=no
+OPENCL_FOUND=no
+OPENCL_INCLUDE=""
+OPENCL_LIB=""
+
+# ---- 6. Search for OpenCL headers ----
+for dir in $SYSTEM_INCLUDE_DIRS; do
+    echo "🔎 Checking: $dir"
+    if [ -f "$dir/$OPENCL_HEADER" ]; then
+        OPENCL_INCLUDE="-I$dir"
+        OPENCL_INCLUDE_FOUND=yes
+        echo "✅ Found OpenCL header in: $dir"
+        break
+    fi
+done
+
+# ---- 7. Collect system library directories ----
+echo "📚 Collecting system lib directories from gcc..."
+RAW_LIB_DIRS=$(gcc -Xlinker --verbose 2>&1 | grep SEARCH_DIR | sed 's/SEARCH_DIR("=*\([^"]*\)").*/\1/')
+echo "$RAW_LIB_DIRS"
+
+ALT_LIB_DIRS=$(echo "$RAW_LIB_DIRS" | sed 's|/usr/local|/usr|g')
+echo "$ALT_LIB_DIRS"
+
+SYSTEM_LIB_DIRS=$(echo "$RAW_LIB_DIRS $ALT_LIB_DIRS" | tr ' ' '\n' | sort -u)
+echo "$SYSTEM_LIB_DIRS"
+
+# ---- 8. Search for OpenCL libraries ----
+for dir in $SYSTEM_LIB_DIRS; do
+    echo "🔎 Checking: $dir"
+    if ls "$dir"/libOpenCL.so* >/dev/null 2>&1; then
+        OPENCL_LIB="-L$dir -lOpenCL"
+        OPENCL_LIBDIR="$dir"
+        OPENCL_LIB_FOUND=yes
+        echo "✅ Found OpenCL library in: $dir"
+        break
+    fi
+done
+
+# ---- 9. Finalize OpenCL_FOUND ----
+if [ "$OPENCL_INCLUDE_FOUND" = "yes" ] && [ "$OPENCL_LIB_FOUND" = "yes" ]; then
+    OPENCL_FOUND=yes
+else
+    OPENCL_FOUND=no
+fi
+
+# ---- 10. Handle Emscripten-specific OpenCL include logic ----
+if [ "$OPENCL_INCLUDE_FOUND" = "yes" ] && [ "$OPENCL_LIB_FOUND" = "yes" ]; then
+  OPENCL_FOUND=yes
+
+  if [ "$EMSCRIPTEN_BUILD" = "YES" ]; then
+    OPENCL_INCLUDE="${OPENCL_INCLUDE}/CL"
+    echo "Emscripten build: using OpenCL headers under ${OPENCL_INCLUDE}"
+  else
+    echo "✅ Enabling OpenCL: include directory ${OPENCL_INCLUDE}"
+  fi
+else
+  OPENCL_FOUND=no
+  echo "⚠️  OpenCL not found: falling back to CPU-only"
+fi
+
+# ---- 11. Runtime OpenCL probe ----
+OPENCL_RUNTIME_FOUND=no
+if [ "$OPENCL_FOUND" = "yes" ] && [ "$EMSCRIPTEN_BUILD" != "YES" ]; then
+  echo "Checking for an actual OpenCL runtime platform..."
+  cat > conftest_opencl.c <<EOF
+#include <CL/cl.h>
+int main() {
+    cl_uint n = 0;
+    cl_int status = clGetPlatformIDs(0, NULL, &n);
+    return (status == CL_SUCCESS && n > 0) ? 0 : 1;
+}
+EOF
+
+  ${CC} conftest_opencl.c $OPENCL_LIB -o conftest_opencl >/dev/null 2>&1
+
+  if env LD_LIBRARY_PATH=$OPENCL_LIBDIR:$LD_LIBRARY_PATH ./conftest_opencl >/dev/null 2>&1; then
+    echo "OpenCL runtime detected."
+    OPENCL_RUNTIME_FOUND=yes
+  else
+    echo "No OpenCL runtime detected."
+    OPENCL_RUNTIME_FOUND=no
+  fi
+
+  rm -f conftest_opencl conftest_opencl.c
+fi
+
+echo "Final OpenCL Detection:"
+echo "OPENCL_INCLUDE_FOUND = $OPENCL_INCLUDE_FOUND"
+echo "OPENCL_LIB_FOUND     = $OPENCL_LIB_FOUND"
+echo "OPENCL_FOUND         = $OPENCL_FOUND"
+echo "OPENCL_RUNTIME_FOUND = $OPENCL_RUNTIME_FOUND"
+
+# ---- 12. Compose initial flags ----
+FULL_CXXFLAGS="$OPENMP_CFLAGS"
+FULL_LIBS="$OPENMP_LDFLAGS $R_LAPACK_BLAS_FLIBS"
+
+# ---- 13. Add OpenCL flags if available ----
+if [ "$OPENCL_FOUND" = "yes" ]; then
+  echo "OpenCL headers/libs discovered"
+  FULL_CXXFLAGS="$FULL_CXXFLAGS $OPENCL_INCLUDE"
+  FULL_LIBS="$FULL_LIBS $OPENCL_LIB"
+
+  if [ "$OPENCL_RUNTIME_FOUND" = "yes" ]; then
+    echo "OpenCL runtime probe succeeded"
+    FULL_CXXFLAGS="$FULL_CXXFLAGS -DUSE_OPENCL"
+  else
+    echo "OpenCL runtime probe failed, not defining USE_OPENCL"
+  fi
+
+  if [ "$EMSCRIPTEN_BUILD" = "YES" ]; then
+    echo "Emscripten build: injecting direct cl.h include flag"
+    FULL_CXXFLAGS="$FULL_CXXFLAGS -DUSE_DIRECT_CLH"
+  fi
+else
+  echo "OpenCL manually disabled or not discovered"
+fi
+
+# ---- 14. Detect CUDA (optional) ----
+echo "Checking for NVIDIA GPU via nvidia-smi..."
+
+CUDA_LIBDIR=""
+for dir in $SYSTEM_LIB_DIRS; do
+    if ls "$dir"/libcuda.so* >/dev/null 2>&1; then
+        CUDA_LIBDIR="$dir"
+        echo "✔ Found CUDA driver library in: $dir"
+        break
+    fi
+done
+
+GPU_NAME=$(env LD_LIBRARY_PATH=$CUDA_LIBDIR:$LD_LIBRARY_PATH \
+           /usr/bin/nvidia-smi --query-gpu=name --format=csv,noheader 2>&1)
+
+if [ -z "$CUDA_LIBDIR" ]; then
+    echo "⚠️ CUDA driver library not found — GPU detection may fail."
+fi
+
+if [ -n "$GPU_NAME" ]; then
+    echo "GPU detected: $GPU_NAME"
+    GPU_FOUND=yes
+else
+    echo "No GPU detected (nvidia-smi returned empty or error)."
+    GPU_FOUND=no
+fi
+
+echo ">> FULL_CXXFLAGS    = '$FULL_CXXFLAGS'"
+echo ">> FULL_LIBS        = '$FULL_LIBS'"
+
+# ---- 15. Append RcppParallel flags ----
+FULL_LIBS="$FULL_LIBS $RPP_LDFLAGS"
+FULL_CXXFLAGS="$FULL_CXXFLAGS $RPP_CPPFLAGS"
+
+echo ">> FULL_CXXFLAGS    = '$FULL_CXXFLAGS'"
+echo ">> FULL_LIBS        = '$FULL_LIBS'"
+
+# ---- 16. Rcpp include (multiple .libPaths() / GLMBAYES_RCPP_LIB) — see tools/rcpp_include.R ----
+echo ">> Resolving Rcpp include flags via tools/rcpp_include.R"
+# tools/rcpp_include.R prints: line1 = VERSION<TAB>LIB, line2 = -I"...", line3 = Function.h branch 1/2/3
+RCPP_OUT=$("$RSCRIPT" --vanilla tools/rcpp_include.R) || exit $?
+RCPP_META=$(printf '%s\n' "$RCPP_OUT" | head -n 1)
+RCPP_CPPFLAGS=$(printf '%s\n' "$RCPP_OUT" | sed -n '2p')
+RCPP_FHBR=$(printf '%s\n' "$RCPP_OUT" | sed -n '3p')
+RCPP_PKG_VERSION=$(printf '%s\n' "$RCPP_META" | cut -f1)
+RCPP_PKG_LIB=$(printf '%s\n' "$RCPP_META" | cut -f2)
+R_ID_LINE=$("$RSCRIPT" -e 'rv <- as.character(getRversion()); v <- R.version; s <- if (!is.null(v[["svn.rev"]])) v[["svn.rev"]] else v[["svn rev"]]; s <- as.character(s); if (!length(s) || !nzchar(s)) s <- "unknown"; cat(sprintf("configure: R version: %s (svn: %s)", rv, s))')
+echo "$R_ID_LINE"
+echo "configure: confirmed Rcpp package version ${RCPP_PKG_VERSION} (library: ${RCPP_PKG_LIB})"
+echo ">> Rcpp Function.h branch (for Makevars) = ${RCPP_FHBR}  (see tools/rcpp_include.R stderr for conditions)"
+echo ">> RCPP_CPPFLAGS    = '$RCPP_CPPFLAGS'"
+
+# ---- 17. Write final Makevars (PKG_CPPFLAGS precedes LinkingTo -I so newest Rcpp wins) ----
+echo "PKG_CPPFLAGS = $RCPP_CPPFLAGS" > src/Makevars
+# Compile lines show which Rcpp Function.h `Function(name,ns)` path matches this R (see tools/rcpp_include.R).
+echo "PKG_CXXFLAGS = $FULL_CXXFLAGS -DGLMBAYES_RCPP_FH_SIM=${RCPP_FHBR} -include glmbayes_getRegisteredNamespace.h" >> src/Makevars
+echo "PKG_LIBS = $FULL_LIBS" >> src/Makevars

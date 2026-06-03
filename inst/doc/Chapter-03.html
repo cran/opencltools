@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+
+
+<title>Chapter 03: Kernel runners and wrappers — the glmbayes pattern</title>
+
+<script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
+// be compatible with the behavior of Pandoc < 2.8).
+document.addEventListener('DOMContentLoaded', function(e) {
+  var hs = document.querySelectorAll("div.section[class*='level'] > :first-child");
+  var i, h, a;
+  for (i = 0; i < hs.length; i++) {
+    h = hs[i];
+    if (!/^h[1-6]$/i.test(h.tagName)) continue;  // it should be a header h1-h6
+    a = h.attributes;
+    while (a.length > 0) h.removeAttribute(a[0].name);
+  }
+});
+</script>
+
+<style type="text/css">
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+span.underline{text-decoration: underline;}
+div.column{display: inline-block; vertical-align: top; width: 50%;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+</style>
+
+
+
+<style type="text/css">
+code {
+white-space: pre;
+}
+.sourceCode {
+overflow: visible;
+}
+</style>
+<style type="text/css" data-origin="pandoc">
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+{ counter-reset: source-line 0; }
+pre.numberSource code > span
+{ position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+{ content: counter(source-line);
+position: relative; left: -1em; text-align: right; vertical-align: baseline;
+border: none; display: inline-block;
+-webkit-touch-callout: none; -webkit-user-select: none;
+-khtml-user-select: none; -moz-user-select: none;
+-ms-user-select: none; user-select: none;
+padding: 0 4px; width: 4em;
+color: #aaaaaa;
+}
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa; padding-left: 4px; }
+div.sourceCode
+{ }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } 
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.at { color: #7d9029; } 
+code span.bn { color: #40a070; } 
+code span.bu { color: #008000; } 
+code span.cf { color: #007020; font-weight: bold; } 
+code span.ch { color: #4070a0; } 
+code span.cn { color: #880000; } 
+code span.co { color: #60a0b0; font-style: italic; } 
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.do { color: #ba2121; font-style: italic; } 
+code span.dt { color: #902000; } 
+code span.dv { color: #40a070; } 
+code span.er { color: #ff0000; font-weight: bold; } 
+code span.ex { } 
+code span.fl { color: #40a070; } 
+code span.fu { color: #06287e; } 
+code span.im { color: #008000; font-weight: bold; } 
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.kw { color: #007020; font-weight: bold; } 
+code span.op { color: #666666; } 
+code span.ot { color: #007020; } 
+code span.pp { color: #bc7a00; } 
+code span.sc { color: #4070a0; } 
+code span.ss { color: #bb6688; } 
+code span.st { color: #4070a0; } 
+code span.va { color: #19177c; } 
+code span.vs { color: #4070a0; } 
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } 
+</style>
+<script>
+// apply pandoc div.sourceCode style to pre.sourceCode instead
+(function() {
+  var sheets = document.styleSheets;
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].ownerNode.dataset["origin"] !== "pandoc") continue;
+    try { var rules = sheets[i].cssRules; } catch (e) { continue; }
+    var j = 0;
+    while (j < rules.length) {
+      var rule = rules[j];
+      // check if there is a div.sourceCode rule
+      if (rule.type !== rule.STYLE_RULE || rule.selectorText !== "div.sourceCode") {
+        j++;
+        continue;
+      }
+      var style = rule.style.cssText;
+      // check if color or background-color is set
+      if (rule.style.color === '' && rule.style.backgroundColor === '') {
+        j++;
+        continue;
+      }
+      // replace div.sourceCode by a pre.sourceCode rule
+      sheets[i].deleteRule(j);
+      sheets[i].insertRule('pre.sourceCode{' + style + '}', j);
+    }
+  }
+})();
+</script>
+
+
+
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; } 
+code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">Chapter 03: Kernel runners and wrappers —
+the glmbayes pattern</h1>
+
+
+
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a><span class="fu">library</span>(opencltools)</span></code></pre></div>
+<div id="introduction" class="section level1">
+<h1>Introduction</h1>
+<p>Once you have OpenCL installed (Chapter 01) and understand how to
+assemble a program from annotated library shards (Chapter 02), the next
+step is to wire GPU computation into your R package in a maintainable
+way.</p>
+<p><code>glmbayes</code> provides the canonical reference implementation
+of this pattern. It uses a <strong>two-layer architecture</strong> — a
+<em>kernel runner</em> that manages the raw OpenCL API, and a <em>kernel
+wrapper</em> that adapts R inputs and outputs — together with a “fail
+gracefully” strategy that falls back to CPU execution whenever OpenCL is
+unavailable or slow.</p>
+<p>This chapter describes both layers and the fail-gracefully pattern so
+you can replicate them in your own package. All source code referenced
+here lives in <code>glmbayes</code>; see
+<code>?glmbayes::EnvelopeEval</code> for entry points.</p>
+<hr />
+</div>
+<div id="architecture-overview" class="section level1">
+<h1>1. Architecture overview</h1>
+<p>The two-layer design cleanly separates concerns:</p>
+<table>
+<colgroup>
+<col width="20%" />
+<col width="17%" />
+<col width="17%" />
+<col width="45%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Layer</th>
+<th>Name</th>
+<th>File</th>
+<th>Responsibility</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>Wrapper</strong></td>
+<td><code>f2_f3_opencl</code></td>
+<td><code>kernel_wrappers.cpp</code></td>
+<td>Flatten R inputs, select kernel, assemble program, call runner,
+reshape outputs</td>
+</tr>
+<tr class="even">
+<td><strong>Runner</strong></td>
+<td><code>f2_f3_kernel_runner</code></td>
+<td><code>kernel_runners.cpp</code></td>
+<td>Platform/device setup, buffer management, kernel launch, result
+readback</td>
+</tr>
+</tbody>
+</table>
+<div id="call-path" class="section level3">
+<h3>Call path</h3>
+<pre><code>EnvelopeEval (R or C++)
+    |-- if use_opencl &amp;&amp; pilot/check passes:
+    |       f2_f3_opencl()  -&gt;  f2_f3_kernel_runner()
+    \-- else:
+            f2_f3_non_opencl()  -&gt;  CPU family functions</code></pre>
+<p><code>EnvelopeEval</code> receives a coefficient grid, design matrix,
+prior parameters, and family/link specification. It selects the GPU or
+CPU path and dispatches accordingly. The GPU path calls
+<code>f2_f3_opencl</code>, which assembles the OpenCL program and
+invokes <code>f2_f3_kernel_runner</code>; the CPU path calls
+<code>f2_f3_non_opencl</code>, which dispatches to the appropriate C++
+function.</p>
+<hr />
+</div>
+</div>
+<div id="kernel-structure" class="section level1">
+<h1>2. Kernel structure</h1>
+<p>Every family/link has a dedicated <code>.cl</code> file that
+implements the f2 (negative log posterior) and f3 (gradient)
+computations for one model. Each kernel follows the same five-step
+pattern:</p>
+<div id="step-1-work-item-mapping" class="section level3">
+<h3>Step 1 — Work-item mapping</h3>
+<div class="sourceCode" id="cb3"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a><span class="dt">int</span> j <span class="op">=</span> get_global_id<span class="op">(</span><span class="dv">0</span><span class="op">);</span></span>
+<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a><span class="cf">if</span> <span class="op">(</span>j <span class="op">&gt;=</span> m1<span class="op">)</span> <span class="cf">return</span><span class="op">;</span></span></code></pre></div>
+<p>One OpenCL work item handles one grid point <code>j</code>. The total
+number of work items equals <code>m1</code> (the size of the tangency
+grid), so all grid points are evaluated in parallel.</p>
+</div>
+<div id="step-2-prior-term" class="section level3">
+<h3>Step 2 — Prior term</h3>
+<div class="sourceCode" id="cb4"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a><span class="co">// tmp[k] = [P * (B_j - mu)]_k</span></span>
+<span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a><span class="dt">double</span> tmp<span class="op">[</span>MAX_L2<span class="op">];</span></span>
+<span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a><span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> k <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> k <span class="op">&lt;</span> l2<span class="op">;</span> <span class="op">++</span>k<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a>  <span class="dt">double</span> acc <span class="op">=</span> <span class="fl">0.0</span><span class="op">;</span></span>
+<span id="cb4-5"><a href="#cb4-5" tabindex="-1"></a>  <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> ell <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> ell <span class="op">&lt;</span> l2<span class="op">;</span> <span class="op">++</span>ell<span class="op">)</span></span>
+<span id="cb4-6"><a href="#cb4-6" tabindex="-1"></a>    acc <span class="op">+=</span> P<span class="op">[</span>k<span class="op">*</span>l2 <span class="op">+</span> ell<span class="op">]</span> <span class="op">*</span> <span class="op">(</span>B<span class="op">[</span>j<span class="op">*</span>l2 <span class="op">+</span> ell<span class="op">]</span> <span class="op">-</span> mu<span class="op">[</span>ell<span class="op">]);</span></span>
+<span id="cb4-7"><a href="#cb4-7" tabindex="-1"></a>  tmp<span class="op">[</span>k<span class="op">]</span> <span class="op">=</span> acc<span class="op">;</span></span>
+<span id="cb4-8"><a href="#cb4-8" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb4-9"><a href="#cb4-9" tabindex="-1"></a></span>
+<span id="cb4-10"><a href="#cb4-10" tabindex="-1"></a><span class="co">// Quadratic form 0.5 * (B_j - mu)&#39; * P * (B_j - mu)</span></span>
+<span id="cb4-11"><a href="#cb4-11" tabindex="-1"></a><span class="dt">double</span> res_acc <span class="op">=</span> <span class="fl">0.0</span><span class="op">;</span></span>
+<span id="cb4-12"><a href="#cb4-12" tabindex="-1"></a><span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> k <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> k <span class="op">&lt;</span> l2<span class="op">;</span> <span class="op">++</span>k<span class="op">)</span></span>
+<span id="cb4-13"><a href="#cb4-13" tabindex="-1"></a>  res_acc <span class="op">+=</span> <span class="op">(</span>B<span class="op">[</span>j<span class="op">*</span>l2 <span class="op">+</span> k<span class="op">]</span> <span class="op">-</span> mu<span class="op">[</span>k<span class="op">])</span> <span class="op">*</span> tmp<span class="op">[</span>k<span class="op">];</span></span>
+<span id="cb4-14"><a href="#cb4-14" tabindex="-1"></a>res_acc <span class="op">*=</span> <span class="fl">0.5</span><span class="op">;</span></span></code></pre></div>
+</div>
+<div id="step-3-prior-gradient" class="section level3">
+<h3>Step 3 — Prior gradient</h3>
+<div class="sourceCode" id="cb5"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a><span class="dt">double</span> g_loc<span class="op">[</span>MAX_L2<span class="op">];</span></span>
+<span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a><span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> k <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> k <span class="op">&lt;</span> l2<span class="op">;</span> <span class="op">++</span>k<span class="op">)</span></span>
+<span id="cb5-3"><a href="#cb5-3" tabindex="-1"></a>  g_loc<span class="op">[</span>k<span class="op">]</span> <span class="op">=</span> tmp<span class="op">[</span>k<span class="op">];</span>   <span class="co">// P * (B_j - mu)</span></span></code></pre></div>
+</div>
+<div id="step-4-data-loop" class="section level3">
+<h3>Step 4 — Data loop</h3>
+<p>For each observation <code>i</code>, compute the linear predictor,
+apply the link function, add the likelihood contribution to
+<code>res_acc</code>, and accumulate the gradient. This step calls the
+ported nmath functions (e.g. <code>dnorm4</code>, <code>dgamma</code>,
+<code>dbinom_raw</code>, <code>pnorm5</code>):</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a><span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> i <span class="op">&lt;</span> l1<span class="op">;</span> <span class="op">++</span>i<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb6-2"><a href="#cb6-2" tabindex="-1"></a>  <span class="dt">double</span> dot <span class="op">=</span> alpha<span class="op">[</span>i<span class="op">];</span></span>
+<span id="cb6-3"><a href="#cb6-3" tabindex="-1"></a>  <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> k <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> k <span class="op">&lt;</span> l2<span class="op">;</span> <span class="op">++</span>k<span class="op">)</span></span>
+<span id="cb6-4"><a href="#cb6-4" tabindex="-1"></a>    dot <span class="op">+=</span> X<span class="op">[</span>k<span class="op">*</span>l1 <span class="op">+</span> i<span class="op">]</span> <span class="op">*</span> B<span class="op">[</span>j<span class="op">*</span>l2 <span class="op">+</span> k<span class="op">];</span></span>
+<span id="cb6-5"><a href="#cb6-5" tabindex="-1"></a></span>
+<span id="cb6-6"><a href="#cb6-6" tabindex="-1"></a>  <span class="co">// Gaussian example: -log dnorm(y | mean=dot, sd=1/sqrt(wt))</span></span>
+<span id="cb6-7"><a href="#cb6-7" tabindex="-1"></a>  <span class="dt">double</span> sd_i <span class="op">=</span> <span class="fl">1.0</span> <span class="op">/</span> sqrt<span class="op">(</span>wt<span class="op">[</span>i<span class="op">]);</span></span>
+<span id="cb6-8"><a href="#cb6-8" tabindex="-1"></a>  <span class="dt">double</span> ll   <span class="op">=</span> dnorm4<span class="op">(</span>y<span class="op">[</span>i<span class="op">],</span> dot<span class="op">,</span> sd_i<span class="op">,</span> <span class="dv">1</span><span class="op">);</span>   <span class="co">// give_log = 1</span></span>
+<span id="cb6-9"><a href="#cb6-9" tabindex="-1"></a>  res_acc    <span class="op">-=</span> ll<span class="op">;</span></span>
+<span id="cb6-10"><a href="#cb6-10" tabindex="-1"></a></span>
+<span id="cb6-11"><a href="#cb6-11" tabindex="-1"></a>  <span class="dt">double</span> resid <span class="op">=</span> wt<span class="op">[</span>i<span class="op">]</span> <span class="op">*</span> <span class="op">(</span>dot <span class="op">-</span> y<span class="op">[</span>i<span class="op">]);</span></span>
+<span id="cb6-12"><a href="#cb6-12" tabindex="-1"></a>  <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> k <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> k <span class="op">&lt;</span> l2<span class="op">;</span> <span class="op">++</span>k<span class="op">)</span></span>
+<span id="cb6-13"><a href="#cb6-13" tabindex="-1"></a>    g_loc<span class="op">[</span>k<span class="op">]</span> <span class="op">+=</span> X<span class="op">[</span>k<span class="op">*</span>l1 <span class="op">+</span> i<span class="op">]</span> <span class="op">*</span> resid<span class="op">;</span></span>
+<span id="cb6-14"><a href="#cb6-14" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+</div>
+<div id="step-5-write-outputs" class="section level3">
+<h3>Step 5 — Write outputs</h3>
+<div class="sourceCode" id="cb7"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a>qf<span class="op">[</span>j<span class="op">]</span> <span class="op">=</span> res_acc<span class="op">;</span></span>
+<span id="cb7-2"><a href="#cb7-2" tabindex="-1"></a><span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> k <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> k <span class="op">&lt;</span> l2<span class="op">;</span> <span class="op">++</span>k<span class="op">)</span></span>
+<span id="cb7-3"><a href="#cb7-3" tabindex="-1"></a>  grad<span class="op">[</span>k<span class="op">*</span>m1 <span class="op">+</span> j<span class="op">]</span> <span class="op">=</span> g_loc<span class="op">[</span>k<span class="op">];</span>   <span class="co">// column-major</span></span></code></pre></div>
+<p><code>qf[j]</code> holds the negative log posterior for grid point
+<code>j</code>; <code>grad</code> holds the gradient in column-major
+layout (dimension <code>l2 × m1</code>).</p>
+<hr />
+</div>
+<div id="supported-familylink-kernels-in-glmbayes" class="section level2">
+<h2>2.1 Supported family/link kernels in glmbayes</h2>
+<table>
+<colgroup>
+<col width="20%" />
+<col width="15%" />
+<col width="32%" />
+<col width="32%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Family</th>
+<th>Link</th>
+<th>Kernel file</th>
+<th>nmath calls</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>binomial</td>
+<td>logit</td>
+<td><code>f2_f3_binomial_logit.cl</code></td>
+<td><code>dbinom_raw</code></td>
+</tr>
+<tr class="even">
+<td>binomial</td>
+<td>probit</td>
+<td><code>f2_f3_binomial_probit.cl</code></td>
+<td><code>dbinom_raw</code>, <code>dnorm4</code>,
+<code>pnorm5</code></td>
+</tr>
+<tr class="odd">
+<td>binomial</td>
+<td>cloglog</td>
+<td><code>f2_f3_binomial_cloglog.cl</code></td>
+<td><code>dbinom_raw</code>, <code>expm1</code></td>
+</tr>
+<tr class="even">
+<td>Poisson</td>
+<td>log</td>
+<td><code>f2_f3_poisson.cl</code></td>
+<td><em>(uses OpenCL builtin <code>lgamma</code>)</em></td>
+</tr>
+<tr class="odd">
+<td>Gamma</td>
+<td>inverse</td>
+<td><code>f2_f3_gamma.cl</code></td>
+<td><code>dgamma</code></td>
+</tr>
+<tr class="even">
+<td>Gaussian</td>
+<td>identity</td>
+<td><code>f2_f3_gaussian.cl</code></td>
+<td><code>dnorm4</code></td>
+</tr>
+</tbody>
+</table>
+<p>Each file is annotated with <code>@calls_nmath</code>,
+<code>@depends_nmath</code>, and <code>@all_depends_nmath</code> (see
+Chapter 02, §6) so the kernel runner loads only the library shards it
+needs.</p>
+<hr />
+</div>
+</div>
+<div id="the-kernel-wrapper" class="section level1">
+<h1>3. The kernel wrapper</h1>
+<p>The wrapper (<code>f2_f3_opencl</code> in
+<code>kernel_wrappers.cpp</code>) is an Rcpp-exported function. Its
+responsibilities are:</p>
+<ol style="list-style-type: decimal">
+<li><p><strong>Input flattening</strong> — convert R
+<code>NumericMatrix</code> / <code>NumericVector</code> to contiguous
+<code>std::vector&lt;double&gt;</code> in the memory layout the runner
+expects (<code>flattenMatrix</code>, <code>copyVector</code> from
+<code>openclPort</code>).</p></li>
+<li><p><strong>Kernel selection</strong> — map
+<code>(family, link)</code> to a kernel name and kernel file path:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb8-1"><a href="#cb8-1" tabindex="-1"></a><span class="bu">std::</span>string kernel_name <span class="op">=</span> <span class="st">&quot;f2_f3_binomial_logit&quot;</span><span class="op">;</span></span>
+<span id="cb8-2"><a href="#cb8-2" tabindex="-1"></a><span class="bu">std::</span>string kernel_file <span class="op">=</span> <span class="st">&quot;src/f2_f3_binomial_logit.cl&quot;</span><span class="op">;</span></span></code></pre></div></li>
+<li><p><strong>Program assembly</strong> — call
+<code>load_library_for_kernel()</code> for the minimal nmath subset,
+then concatenate:</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb9-1"><a href="#cb9-1" tabindex="-1"></a><span class="bu">std::</span>string all_src <span class="op">=</span></span>
+<span id="cb9-2"><a href="#cb9-2" tabindex="-1"></a>    load_kernel_source<span class="op">(</span><span class="st">&quot;OPENCL.cl&quot;</span><span class="op">,</span> pkg<span class="op">)</span></span>
+<span id="cb9-3"><a href="#cb9-3" tabindex="-1"></a>  <span class="op">+</span> load_kernel_library<span class="op">(</span><span class="st">&quot;rmath&quot;</span><span class="op">,</span> pkg<span class="op">)</span></span>
+<span id="cb9-4"><a href="#cb9-4" tabindex="-1"></a>  <span class="op">+</span> load_kernel_library<span class="op">(</span><span class="st">&quot;dpq&quot;</span><span class="op">,</span>   pkg<span class="op">)</span></span>
+<span id="cb9-5"><a href="#cb9-5" tabindex="-1"></a>  <span class="op">+</span> load_library_for_kernel<span class="op">(</span>kernel_file<span class="op">,</span> nmath_dir<span class="op">,</span> <span class="st">&quot;all_depends_nmath&quot;</span><span class="op">)</span></span>
+<span id="cb9-6"><a href="#cb9-6" tabindex="-1"></a>  <span class="op">+</span> load_kernel_source<span class="op">(</span>kernel_file<span class="op">,</span> pkg<span class="op">);</span></span></code></pre></div></li>
+<li><p><strong>Runner call</strong> — invoke
+<code>f2_f3_kernel_runner(all_src, kernel_name, ...)</code>.</p></li>
+<li><p><strong>Output reshaping</strong> — wrap the flat <code>qf</code>
+and <code>grad</code> results into R <code>NumericVector</code> and
+<code>arma::mat</code> for return to R.</p></li>
+</ol>
+<div id="linking-against-opencltools" class="section level3">
+<h3>Linking against opencltools</h3>
+<p>The wrapper can use <code>opencltools</code> C++ utilities by adding
+to the downstream package’s <code>DESCRIPTION</code>:</p>
+<pre><code>LinkingTo: opencltools, Rcpp, RcppArmadillo</code></pre>
+<p>This gives access to <code>openclPort.h</code> which declares
+<code>flattenMatrix</code>, <code>copyVector</code>,
+<code>configureOpenCL</code>, and
+<code>load_library_for_kernel</code>.</p>
+<hr />
+</div>
+</div>
+<div id="the-kernel-runner" class="section level1">
+<h1>4. The kernel runner</h1>
+<p>The runner (<code>f2_f3_kernel_runner</code> in
+<code>kernel_runners.cpp</code>) handles the low-level OpenCL API. Each
+call is stateless — it sets up a complete OpenCL context, launches the
+kernel, reads back results, and releases all resources:</p>
+<pre><code>1. clGetPlatformIDs / clGetDeviceIDs (CL_DEVICE_TYPE_DEFAULT)
+2. clCreateContext / clCreateCommandQueueWithProperties
+3. clCreateProgramWithSource(all_src) + clBuildProgram
+4. clCreateKernel(kernel_name)
+5. Create read/write buffers; copy input data to device
+6. clEnqueueNDRangeKernel (global_size = m1, local_size = NULL)
+7. clEnqueueReadBuffer for qf and grad
+8. Sanity check: if both outputs are all-zero, throw (kernel build failure)
+9. Release buffers, kernel, program, queue, context</code></pre>
+<p>The runner is GLM-specific (it knows the buffer layout for X, B, mu,
+P, alpha, y, wt, qf, grad) but the OpenCL plumbing portion is fully
+generic. The general utilities — kernel loading, device enumeration,
+<code>fp64</code> probing — live in <code>openclPort</code> and are
+re-exported by <code>opencltools</code> for use by any downstream
+package.</p>
+<hr />
+</div>
+<div id="fail-gracefully-the-dispatch-pattern" class="section level1">
+<h1>5. Fail gracefully — the dispatch pattern</h1>
+<p>The fail-gracefully pattern is the key architectural decision that
+makes GPU acceleration optional in a downstream package. The idea is
+that <strong>every</strong> GPU-dispatching function has a CPU fallback
+of identical interface:</p>
+<div class="sourceCode" id="cb12"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb12-1"><a href="#cb12-1" tabindex="-1"></a><span class="co">// In EnvelopeEval.cpp (glmbayes)</span></span>
+<span id="cb12-2"><a href="#cb12-2" tabindex="-1"></a><span class="cf">if</span> <span class="op">(</span>use_opencl <span class="op">&amp;&amp;</span> opencl_pilot_ok<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb12-3"><a href="#cb12-3" tabindex="-1"></a>  result <span class="op">=</span> f2_f3_opencl<span class="op">(</span>X<span class="op">,</span> B<span class="op">,</span> mu<span class="op">,</span> P<span class="op">,</span> alpha<span class="op">,</span> y<span class="op">,</span> wt<span class="op">,</span> family<span class="op">,</span> link<span class="op">);</span></span>
+<span id="cb12-4"><a href="#cb12-4" tabindex="-1"></a><span class="op">}</span> <span class="cf">else</span> <span class="op">{</span></span>
+<span id="cb12-5"><a href="#cb12-5" tabindex="-1"></a>  result <span class="op">=</span> f2_f3_non_opencl<span class="op">(</span>X<span class="op">,</span> B<span class="op">,</span> mu<span class="op">,</span> P<span class="op">,</span> alpha<span class="op">,</span> y<span class="op">,</span> wt<span class="op">,</span> family<span class="op">,</span> link<span class="op">);</span></span>
+<span id="cb12-6"><a href="#cb12-6" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p><code>f2_f3_non_opencl</code> is a plain C++ function that calls the
+same family functions (<code>f2_f3_binomial_logit</code>,
+<code>f2_f3_gaussian</code>, etc.) without any OpenCL involvement.</p>
+<p>This pattern means:</p>
+<ul>
+<li><strong><code>has_opencl()</code> returning
+<code>FALSE</code></strong> — the package still installs and works;
+<code>use_opencl</code> is silently ignored.</li>
+<li><strong>OpenCL build failure</strong> (kernel compile error) — the
+runner throws; the caller catches and falls back to CPU.</li>
+<li><strong>Numerical mismatch</strong> — the pilot can compare a small
+GPU result against the CPU result; if they differ beyond tolerance, fall
+back automatically.</li>
+</ul>
+<hr />
+</div>
+<div id="the-pilot-pattern" class="section level1">
+<h1>6. The pilot pattern</h1>
+<p>For large workloads (e.g. a tangency grid with &gt; 50,000 points),
+<code>glmbayes</code> runs a <strong>pilot</strong> before committing to
+the full GPU evaluation. The pilot:</p>
+<ol style="list-style-type: decimal">
+<li><strong>Warm-up</strong> — run the GPU kernel on a tiny slice (10–20
+points) to initialize the context and just-in-time (JIT) compile the
+program.</li>
+<li><strong>Calibration</strong> — run on slices of ~1% and ~2% of the
+grid, time each.</li>
+<li><strong>Extrapolation</strong> —
+<code>refined_est_total_sec = per_grid_sec × m1</code>.</li>
+<li><strong>5-minute safeguard</strong> — if
+<code>refined_est_total_sec &gt; 300</code>:
+<ul>
+<li><strong>Interactive session</strong>: prompt “Do you want to
+continue? [y/N]”</li>
+<li><strong>Non-interactive session</strong>: proceed automatically (CI
+/ batch jobs)</li>
+</ul></li>
+</ol>
+<p>This pattern is reusable in any package that dispatches large
+parallel workloads to a GPU. The 5-minute threshold and prompt wording
+can be tuned to the specific workload.</p>
+<hr />
+</div>
+<div id="setting-up-opencl-before-first-use" class="section level1">
+<h1>7. Setting up OpenCL before first use</h1>
+<p><code>glmbayes</code> calls <code>configureOpenCL()</code> during
+package initialization to probe the OpenCL device for native
+<code>expm1</code> and <code>log1p</code> support. The probe compiles a
+tiny test kernel and checks the result:</p>
+<ul>
+<li>If the device computes <code>expm1(0)</code> accurately → define
+<code>USE_OPENCL_EXPM1</code>.</li>
+<li>If the device computes <code>log1p(0)</code> accurately → define
+<code>USE_OPENCL_LOG1P</code>.</li>
+</ul>
+<p>These flags are passed as <code>-D</code> options to
+<code>clBuildProgram</code> and control whether the nmath shims
+(<code>expm1.cl</code>, <code>log1p.cl</code>) use the native builtin or
+the ported fallback.</p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb13-1"><a href="#cb13-1" tabindex="-1"></a><span class="co">// In your package&#39;s initialization (e.g., called from .onLoad)</span></span>
+<span id="cb13-2"><a href="#cb13-2" tabindex="-1"></a>OpenCLConfig cfg <span class="op">=</span> configureOpenCL<span class="op">();</span></span>
+<span id="cb13-3"><a href="#cb13-3" tabindex="-1"></a><span class="co">// cfg.build_options contains -DUSE_OPENCL_EXPM1 etc. as appropriate</span></span>
+<span id="cb13-4"><a href="#cb13-4" tabindex="-1"></a><span class="co">// Pass cfg.build_options to clBuildProgram</span></span></code></pre></div>
+<p><code>configureOpenCL</code> is declared in <code>openclPort.h</code>
+and is available to any package that lists <code>opencltools</code>
+under <code>LinkingTo</code>.</p>
+<hr />
+</div>
+<div id="cross-references" class="section level1">
+<h1>Cross-references</h1>
+<ul>
+<li><strong>Chapter 01</strong> — OpenCL installation and
+<code>has_opencl()</code></li>
+<li><strong>Chapter 02</strong> — Program assembly,
+<code>load_library_for_kernel()</code></li>
+<li><strong><code>?load_kernel_source</code></strong>,
+<strong><code>?load_kernel_library</code></strong></li>
+<li><strong><code>?load_library_for_kernel</code></strong></li>
+<li><strong><code>glmbayes::EnvelopeEval</code></strong>,
+<strong><code>glmbayes::EnvelopeBuild</code></strong> — reference
+implementation</li>
+</ul>
+<hr />
+</div>
+<div id="references" class="section level1">
+<h1>References</h1>
+<p>Nygren, K. N., &amp; Nygren, L. M. (2006). Likelihood subgradient
+densities. <em>Journal of the American Statistical Association</em>,
+101(475), 1144–1156. <a href="https://doi.org/10.1198/016214506000000357" class="uri">https://doi.org/10.1198/016214506000000357</a></p>
+<p>The <code>f2_f3_*</code> kernels documented here evaluate negative
+log-posterior and gradient terms that feed the likelihood-subgradient
+envelope construction from this paper.</p>
+<p>Nygren, K. N. (2026). <em>opencltools: OpenCL Tools for R Package
+Developers</em>. R package. <code>citation(&quot;opencltools&quot;)</code>.</p>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>
