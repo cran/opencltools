@@ -48,6 +48,18 @@ std::string load_kernel_library_wrapper(
     bool verbose = false
 );
 
+std::string load_program_preload_wrapper(
+    std::string manifest_relative_path,
+    std::string source_package,
+    bool verbose = false);
+
+std::string load_library_for_kernel_cross_package_wrapper(
+    std::string kernel_relative_path,
+    std::string kernel_package,
+    std::string library_subdir,
+    std::string library_package,
+    std::string depends_tag);
+
 bool has_opencl();
 int get_opencl_core_count();
 
@@ -67,6 +79,35 @@ std::string load_library_for_kernel(
     const std::string& library_subdir,
     const std::string& package,
     const std::string& depends_tag);
+
+std::string load_library_for_kernel_cross_package(
+    const std::string& kernel_relative_path,
+    const std::string& kernel_package,
+    const std::string& library_subdir,
+    const std::string& library_package,
+    const std::string& depends_tag);
+
+enum class ProgramPreloadKind { file, library };
+
+struct ProgramPreloadEntry {
+  int rank;
+  ProgramPreloadKind kind;
+  std::string rel_path;
+};
+
+std::vector<ProgramPreloadEntry> read_program_preload_manifest(
+    const std::string& manifest_relative_path,
+    const std::string& source_package);
+
+std::string load_program_preload_entries(
+    const std::vector<ProgramPreloadEntry>& entries,
+    const std::string& source_package,
+    bool verbose = false);
+
+std::string load_program_preload(
+    const std::string& manifest_relative_path = "program_preload_manifest.tsv",
+    const std::string& source_package = "nmathopencl",
+    bool verbose = false);
 
 #ifdef USE_OPENCL
 

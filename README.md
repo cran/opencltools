@@ -179,6 +179,9 @@ library:
 | `attach_kernel_call_tags()` | **Step 1** — scan your kernel source, match calls against a library's `@provides` list, write `@calls_<tag>` and `@depends_<tag>` into the kernel files. No manual tagging needed. |
 | `attach_cross_library_tags()` | **Step 2** — read `@depends_<tag>`, compute the full transitive closure against the library index, write `@all_depends_<tag>` back into the kernel files |
 | `load_library_for_kernel()` | At runtime (or interactively), read `@all_depends_<tag>` from a kernel file and concatenate only the library shards it needs, in dependency order. Emits warnings for known-problematic stems. |
+| `load_library_for_kernel_cross_package()` | Same as above when the launcher kernel and annotated library live in different installed packages (paths relative to `inst/cl/`). |
+| `load_program_preload()` | Read `program_preload_manifest.tsv` (or RDS companion) and concatenate the fixed OpenCL prelude in manifest order. |
+| `read_program_preload_manifest()` / `write_program_preload_manifest()` | Inspect or regenerate manifest TSV/RDS companions under `inst/cl/`. |
 | `extract_library_subset()` | Materialize a kernel-specific subset into a local directory (for packages that want to ship their own copy of the needed shards) |
 | `write_kernel_dependency_index()` | Regenerate `kernel_dependency_index.rds` / `.tsv` after updating a library tree |
 
@@ -474,21 +477,25 @@ index, following the `Chapter-NN` convention used by `glmbayes`.
 ### Citing this package
 
 Nygren, K. N. (2026). *opencltools: OpenCL Tools for R Package Developers*.
-R package. Use `citation("opencltools")` for BibTeX and a layered set of
-related entries (methodology, OpenCL, `glmbayes`).
+R package. Use `citation("opencltools")` for BibTeX (package manual and Stone
+et al., 2010 for OpenCL). Cite `nmathopencl` and `glmbayes` separately when
+your work uses those layers.
 
-### Methodology in the worked example (`f2_f3_*` kernels)
+### Methodology in downstream envelope sampling (`f2_f3_*` kernels)
 
-The vignettes and `ex_glmbayes_*` example kernels evaluate **likelihood
-subgradient** quantities used in envelope-based accept–reject sampling. That
-statistical construction is from:
+Vignette Chapter 03 documents the runner/wrapper pattern using **glmbayes** as
+the reference implementation. The **`f2_f3_*`** launcher kernels and envelope
+sampling methodology live in **glmbayes** (and **nmathopencl** for Mathlib
+shards), not in this package's shipped `inst/cl/` trees. The statistical
+construction is from:
 
 Nygren, K. N., & Nygren, L. M. (2006). Likelihood subgradient densities.
 *Journal of the American Statistical Association*, 101(475), 1144–1156.
 <https://doi.org/10.1198/016214506000000357>
 
-Cite this paper when your work uses that envelope/subgradient computation,
-not when you only use the generic OpenCL loading and annotation tools.
+Cite this paper when your work uses that envelope/subgradient computation in
+**glmbayes**, not when you only use the generic OpenCL loading and annotation
+tools in **opencltools**.
 
 ### OpenCL runtime
 

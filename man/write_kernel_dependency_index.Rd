@@ -58,7 +58,7 @@ they remain in sync.
 \examples{
 ############################ Start of write_kernel_dependency_index example ########################
 
-lib_dir <- system.file("cl/ex_glmbayes_nmath", package = "opencltools")
+lib_dir <- system.file("cl/nmath_small", package = "opencltools")
 idx <- write_kernel_dependency_index(library_dir = lib_dir, write = FALSE)
 names(idx)
 length(idx$stems_ordered)
@@ -75,6 +75,7 @@ idx$n_files
 
 Other OpenCL kernel library subsets: 
 \code{\link{extract_library_subset}()},
-\code{\link{load_library_for_kernel}()}
+\code{\link{load_library_for_kernel}()},
+\code{\link{load_library_for_kernel_cross_package}()}
 }
 \concept{OpenCL kernel library subsets}
